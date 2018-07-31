@@ -20,7 +20,7 @@ static struct cdev mydevice_cdev;			/* キャラクタデバイスのオブジ�
 static struct class *mydevice_class = NULL;	/* デバイスドライバのクラスオブジェクト */
 
 /*** 各ファイル(open毎に作られるファイルディスクリプタ)に紐づく情報 ***/
-#define NUM_BUFFER 256
+#define NUM_BUFFER １０２４*1024 // 1MB
 struct _mydevice_file_data {
 	unsigned char buffer[NUM_BUFFER];
 };
@@ -64,13 +64,49 @@ static int mydevice_close(struct inode *inode, struct file *file)
 static ssize_t mydevice_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 {
 	printk("mydevice_read");
+	printk("mydevice_read : count = %zu\n", count);
+	printk("mydevice_read : f_pos = %llu\n", *f_pos);
+	printk("mydevice_read : counter = %u\n", counter);
+	
 	if(count > NUM_BUFFER) count = NUM_BUFFER;
 
+	sprintf(g_buffer, "num: %064u\n", counter);
+	
 	struct _mydevice_file_data *p = filp->private_data;
-	if (copy_to_user(buf, p->buffer, count) != 0) {
+	//if (copy_to_user(buf, p->buffer, count) != 0) {
+	if (copy_to_user(buf, g_buffer, count) != 0) {
 		return -EFAULT;
 	}
+	
+	*f_pos += count;
+	counter += 1;
+	
 	return count;
+}
+
+#define MAX_LENGTH 1024*1024*1024*10 // 10GiB 
+static loff_t mydevice_lseek(struct file *file,loff_t offset, int orig)
+{
+    loff_t new_pos=0;
+    switch( orig )
+    {
+    case 0: /* SEEK_SET: */
+        printk("mydevice_lseek: SEEK_SET")
+        new_pos = offset;
+        break;
+    case 1: /* SEEK_CUR: */
+        printk("mydevice_lseek: SEEK_CUR")
+        new_pos = file->f_pos + offset;
+        break;
+    case 2: /* SEEK_END: */
+        printk("mydevice_lseek: SEEK_END")
+        new_pos = MAX_LENGTH - offset;
+        break;
+    }          
+    if( new_pos > MAX_LENGTH ) new_pos = MAX_LENGTH;
+    if( new_pos < 0 ) new_pos = 0;
+    file->f_pos = new_pos;
+    return new_pos;
 }
 
 /* write時に呼ばれる関数 */
@@ -91,7 +127,7 @@ struct file_operations s_mydevice_fops = {
 	.release = mydevice_close,
 	.read    = mydevice_read,
 	.write   = mydevice_write,
-};
+	.lseek   = mydevice_lseek,};
 
 /* ロード(insmod)時に呼ばれる関数 */
 static int mydevice_init(void)
