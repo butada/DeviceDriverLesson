@@ -20,18 +20,22 @@ static struct cdev mydevice_cdev;			/* キャラクタデバイスのオブジ�
 static struct class *mydevice_class = NULL;	/* デバイスドライバのクラスオブジェクト */
 
 /*** 各ファイル(open毎に作られるファイルディスクリプタ)に紐づく情報 ***/
-#define NUM_BUFFER １０２４*1024 // 1MB
+//#define NUM_BUFFER 256
+#define NUM_BUFFER 1024*1024 // 1MiB
 struct _mydevice_file_data {
 	unsigned char buffer[NUM_BUFFER];
 };
+//static unsigned char g_buffer[NUM_BUFFER];
 
 /* open時に呼ばれる関数 */
 static int mydevice_open(struct inode *inode, struct file *file)
 {
-	printk("mydevice_open");
+	printk("mydevice_open\n");
 
 	/* 各ファイル固有のデータを格納する領域を確保する */
 	struct _mydevice_file_data *p = kmalloc(sizeof(struct _mydevice_file_data), GFP_KERNEL);
+	memset(p, 0, sizeof(struct _mydevice_file_data));
+	
 	if (p == NULL) {
 		printk(KERN_ERR  "kmalloc\n");
 		return -ENOMEM;
@@ -49,7 +53,7 @@ static int mydevice_open(struct inode *inode, struct file *file)
 /* close時に呼ばれる関数 */
 static int mydevice_close(struct inode *inode, struct file *file)
 {
-	printk("mydevice_close");
+	printk("mydevice_close\n");
 
 	if (file->private_data) {
 		/* open時に確保した、各ファイル固有のデータ領域を解放する */
@@ -63,56 +67,56 @@ static int mydevice_close(struct inode *inode, struct file *file)
 /* read時に呼ばれる関数 */
 static ssize_t mydevice_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 {
-	printk("mydevice_read");
-	printk("mydevice_read : count = %zu\n", count);
-	printk("mydevice_read : f_pos = %llu\n", *f_pos);
-	printk("mydevice_read : counter = %u\n", counter);
-	
+	//static unsigned int counter = 0;
+
+	//printk("mydevice_read\n");
+	//printk("mydevice_read : count = %zu\n", count);
+	//printk("mydevice_read : f_pos = %llu\n", *f_pos);
+	//printk("mydevice_read : counter = %u\n", counter);
 	if(count > NUM_BUFFER) count = NUM_BUFFER;
 
-	sprintf(g_buffer, "num: %064u\n", counter);
-	
+	//unsigned char b[1024];
 	struct _mydevice_file_data *p = filp->private_data;
-	//if (copy_to_user(buf, p->buffer, count) != 0) {
-	if (copy_to_user(buf, g_buffer, count) != 0) {
+
+	//sprintf(p->buffer, "num: %064llu\n", *f_pos);
+	//sprintf(g_buffer, "num: %064u\n", counter);
+
+	// copy zero data
+	if (copy_to_user(buf, p->buffer, count) != 0) {
+	//if (copy_to_user(buf, g_buffer, count) != 0) {
+		printk("mydevice_read : [ERROR] -EFAULT\n");
 		return -EFAULT;
 	}
-	
-	*f_pos += count;
-	counter += 1;
-	
-	return count;
-}
 
-#define MAX_LENGTH 1024*1024*1024*10 // 10GiB 
-static loff_t mydevice_lseek(struct file *file,loff_t offset, int orig)
-{
-    loff_t new_pos=0;
-    switch( orig )
-    {
-    case 0: /* SEEK_SET: */
-        printk("mydevice_lseek: SEEK_SET")
-        new_pos = offset;
-        break;
-    case 1: /* SEEK_CUR: */
-        printk("mydevice_lseek: SEEK_CUR")
-        new_pos = file->f_pos + offset;
-        break;
-    case 2: /* SEEK_END: */
-        printk("mydevice_lseek: SEEK_END")
-        new_pos = MAX_LENGTH - offset;
-        break;
-    }          
-    if( new_pos > MAX_LENGTH ) new_pos = MAX_LENGTH;
-    if( new_pos < 0 ) new_pos = 0;
-    file->f_pos = new_pos;
-    return new_pos;
+	// copy counter data
+	unsigned char b[64] = {0};
+	//unsigned long long *p_b;
+        //p_b = (unsigned long long*)&b;
+	loff_t *p_b;
+        p_b = (loff_t*)&b;
+        *p_b = *f_pos / 1024 / 8;
+
+	if ((unsigned int)*p_b % 100 < 23){
+		*p_b = 0;
+	}
+	
+	if (copy_to_user(buf, b, 64) != 0) {
+		printk("mydevice_read : [ERROR] -EFAULT\n");
+		return -EFAULT;
+	}
+
+	//printk("mydevice_read : buf = %s\n", p->buffer);
+
+	*f_pos += count;
+	//counter += 1;
+
+	return count;
 }
 
 /* write時に呼ばれる関数 */
 static ssize_t mydevice_write(struct file *filp, const char __user *buf, size_t count, loff_t *f_pos)
 {
-	printk("mydevice_write");
+	printk("mydevice_write\n");
 
 	struct _mydevice_file_data *p = filp->private_data;
 	if (copy_from_user(p->buffer, buf, count) != 0) {
@@ -127,7 +131,7 @@ struct file_operations s_mydevice_fops = {
 	.release = mydevice_close,
 	.read    = mydevice_read,
 	.write   = mydevice_write,
-	.lseek   = mydevice_lseek,};
+};
 
 /* ロード(insmod)時に呼ばれる関数 */
 static int mydevice_init(void)
@@ -202,3 +206,4 @@ static void mydevice_exit(void)
 
 module_init(mydevice_init);
 module_exit(mydevice_exit);
+
